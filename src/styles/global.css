@@ -1262,3 +1262,196 @@ input, select, textarea {
   font-weight: 400;
   margin-left: 4px;
 }
+
+@media print {
+  * {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body {
+    background: white !important;
+    font-size: 12px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .app-container {
+    background: white !important;
+  }
+
+  .app-header,
+  .sidebar,
+  .back-btn,
+  .trace-controls,
+  .anomaly-filter,
+  .modal-footer,
+  .modal-close,
+  .week-import-btn,
+  .btn,
+  .filter-chip,
+  .user-info,
+  .section-tabs {
+    display: none !important;
+  }
+
+  .content-area {
+    padding: 0 !important;
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  .app-main {
+    display: block !important;
+  }
+
+  .stat-cards {
+    grid-template-columns: repeat(4, 1fr) !important;
+    page-break-inside: avoid;
+  }
+
+  .stat-card {
+    border: 1px solid #ccc !important;
+    break-inside: avoid;
+  }
+
+  .section {
+    border: 1px solid #ccc !important;
+    page-break-inside: avoid;
+    margin-bottom: 20px;
+  }
+
+  .section-header {
+    border-bottom: 1px solid #ccc !important;
+    background: #f5f5f5 !important;
+  }
+
+  .drivers-table {
+    font-size: 11px;
+  }
+
+  .drivers-table th {
+    background: #f5f5f5 !important;
+    border-bottom: 1px solid #ccc !important;
+  }
+
+  .drivers-table td {
+    border-bottom: 1px solid #eee !important;
+  }
+
+  .detail-page {
+    display: block !important;
+    height: auto !important;
+  }
+
+  .detail-header {
+    border-bottom: 2px solid #333 !important;
+    padding: 10px 0 !important;
+    margin-bottom: 15px;
+  }
+
+  .detail-body {
+    display: block !important;
+    height: auto !important;
+  }
+
+  .trace-panel {
+    width: 100% !important;
+    border: none !important;
+    margin-bottom: 20px;
+  }
+
+  .trace-map-wrap {
+    height: 400px !important;
+    border: 1px solid #ccc !important;
+    page-break-inside: avoid;
+  }
+
+  .anomaly-panel {
+    width: 100% !important;
+    border: 1px solid #ccc !important;
+  }
+
+  .anomaly-item {
+    border: 1px solid #ddd !important;
+    page-break-inside: avoid;
+  }
+
+  .modal-overlay {
+    position: static !important;
+    background: white !important;
+    display: block !important;
+  }
+
+  .modal {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    display: block !important;
+  }
+
+  .modal-header {
+    border-bottom: 2px solid #333 !important;
+    padding: 10px 0 !important;
+  }
+
+  .modal-body {
+    padding: 20px 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .badge {
+    border: 1px solid #ccc !important;
+    background: #f0f0f0 !important;
+  }
+
+  .badge-green,
+  .badge-blue,
+  .badge-purple {
+    color: #333 !important;
+  }
+
+  .badge-red,
+  .badge-yellow {
+    color: #666 !important;
+  }
+
+  .rate-bar-fill {
+    background: #999 !important;
+  }
+
+  .rate-bar-fill.good {
+    background: #22c55e !important;
+  }
+
+  .rate-bar-fill.warn {
+    background: #f59e0b !important;
+  }
+
+  .rate-bar-fill.bad {
+    background: #ef4444 !important;
+  }
+
+  h1, h2, h3, h4 {
+    page-break-after: avoid;
+  }
+
+  table, img, svg {
+    page-break-inside: avoid;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}

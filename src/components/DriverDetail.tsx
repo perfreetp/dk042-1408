@@ -6,6 +6,8 @@ interface DriverDetailProps {
   driver: Driver
   performance: DriverPerformance
   route: Route
+  selectedTrainingIds: Set<string>
+  onSelectedTrainingChange: (ids: Set<string>) => void
   onBack: () => void
   onOpenInterview: () => void
 }
@@ -20,13 +22,12 @@ const ANOMALY_ICONS: Record<AnomalyType, string> = {
   overspeed: '⚡'
 }
 
-function DriverDetail({ driver, performance, route, onBack, onOpenInterview }: DriverDetailProps) {
+function DriverDetail({ driver, performance, route, selectedTrainingIds, onSelectedTrainingChange, onBack, onOpenInterview }: DriverDetailProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [playSpeed, setPlaySpeed] = useState(1)
   const [currentTimeIndex, setCurrentTimeIndex] = useState(0)
   const [activeAnomalyId, setActiveAnomalyId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<AnomalyType | 'all'>('all')
-  const [selectedTrainingIds, setSelectedTrainingIds] = useState<Set<string>>(new Set())
   const playIntervalRef = useRef<number | null>(null)
 
   const tracePoints = performance.trace
@@ -93,12 +94,10 @@ function DriverDetail({ driver, performance, route, onBack, onOpenInterview }: D
   }
 
   const toggleTrainingSelect = (anomalyId: string) => {
-    setSelectedTrainingIds(prev => {
-      const next = new Set(prev)
-      if (next.has(anomalyId)) next.delete(anomalyId)
-      else next.add(anomalyId)
-      return next
-    })
+    const next = new Set(selectedTrainingIds)
+    if (next.has(anomalyId)) next.delete(anomalyId)
+    else next.add(anomalyId)
+    onSelectedTrainingChange(next)
   }
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -130,7 +129,7 @@ function DriverDetail({ driver, performance, route, onBack, onOpenInterview }: D
             className="btn btn-secondary"
             onClick={() => {
               const severe = performance.anomalies.filter(a => a.severity === 'high')
-              setSelectedTrainingIds(new Set(severe.map(a => a.id)))
+              onSelectedTrainingChange(new Set(severe.map(a => a.id)))
             }}
           >
             ☑ 选中高危项

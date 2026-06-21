@@ -134,11 +134,28 @@ function generateDateList(weekStart: string): string[] {
   return dates
 }
 
-const WEEK_START = '2026-06-15'
-const dateList = generateDateList(WEEK_START)
+function seededRandom(seed: number) {
+  let s = seed
+  return () => {
+    s = (s * 9301 + 49297) % 233280
+    return s / 233280
+  }
+}
 
-export function generatePerformanceData(): Record<string, DriverPerformance> {
+function getWeekSeed(weekStart: string, driverId: string): number {
+  let hash = 0
+  const str = weekStart + driverId
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return Math.abs(hash)
+}
+
+export function generatePerformanceData(weekStart: string): Record<string, DriverPerformance> {
   const result: Record<string, DriverPerformance> = {}
+  const dateList = generateDateList(weekStart)
 
   const driverConfigs: Record<string, { onTime: number; deviate: number; brake: number; turn: number; blank: number }> = {
     'd-001': { onTime: 94, deviate: 2, brake: 3, turn: 1, blank: 8 },
@@ -152,29 +169,46 @@ export function generatePerformanceData(): Record<string, DriverPerformance> {
   }
 
   drivers.forEach(driver => {
+    const seed = getWeekSeed(weekStart, driver.id)
+    const rand = seededRandom(seed)
     const cfg = driverConfigs[driver.id]
+
+    const weeklyVariation = (rand() * 6 - 3)
+    const adjustedOnTime = Math.max(60, Math.min(99, cfg.onTime + weeklyVariation))
+    const adjustedDeviate = Math.max(0, Math.round(cfg.deviate + (rand() * 3 - 1.5)))
+    const adjustedBrake = Math.max(0, Math.round(cfg.brake + (rand() * 4 - 2)))
+    const adjustedTurn = Math.max(0, Math.round(cfg.turn + (rand() * 2 - 1)))
+    const adjustedBlank = Math.max(0, Math.round(cfg.blank + (rand() * 10 - 5)))
+
     const dailyStats = dateList.map(date => ({
       date,
-      onTimeRate: Math.max(60, Math.min(100, cfg.onTime + (Math.random() * 20 - 10))),
-      anomalyCount: Math.round(Math.max(0, (cfg.deviate + cfg.brake + cfg.turn) / 5 + (Math.random() * 2 - 1))),
-      deviationCount: Math.round(Math.max(0, cfg.deviate / 5 + (Math.random() * 2 - 1))),
-      gpsBlankMinutes: Math.round(Math.max(0, cfg.blank / 7 + (Math.random() * 6 - 3))),
-      suddenEvents: Math.round(Math.max(0, (cfg.brake + cfg.turn) / 5 + (Math.random() * 2 - 1)))
+      onTimeRate: Math.max(50, Math.min(100, adjustedOnTime + (rand() * 16 - 8))),
+      anomalyCount: Math.max(0, Math.round((adjustedDeviate + adjustedBrake + adjustedTurn) / 7 + (rand() * 2 - 1))),
+      deviationCount: Math.max(0, Math.round(adjustedDeviate / 7 + (rand() * 1.5 - 0.5))),
+      gpsBlankMinutes: Math.max(0, Math.round(adjustedBlank / 7 + (rand() * 4 - 2))),
+      suddenEvents: Math.max(0, Math.round((adjustedBrake + adjustedTurn) / 7 + (rand() * 1.5 - 0.5)))
     }))
 
-    const anomalies = generateAnomalies(driver, cfg)
-    const trace = generateTrace(routes.find(r => r.id === driver.routeId)!)
+    const anomalies = generateAnomalies(driver, {
+      onTime: adjustedOnTime,
+      deviate: adjustedDeviate,
+      brake: adjustedBrake,
+      turn: adjustedTurn,
+      blank: adjustedBlank
+    }, dateList, seed)
+
+    const trace = generateTrace(routes.find(r => r.id === driver.routeId)!, seed)
 
     result[driver.id] = {
       driverId: driver.id,
-      weekStart: WEEK_START,
+      weekStart,
       weekEnd: dateList[6],
       totalTrips: 10,
-      onTimeRate: cfg.onTime,
-      deviationCount: cfg.deviate,
-      suddenBrakeCount: cfg.brake,
-      suddenTurnCount: cfg.turn,
-      gpsBlankMinutes: cfg.blank,
+      onTimeRate: Math.round(adjustedOnTime),
+      deviationCount: adjustedDeviate,
+      suddenBrakeCount: adjustedBrake,
+      suddenTurnCount: adjustedTurn,
+      gpsBlankMinutes: adjustedBlank,
       dailyStats,
       anomalies,
       trace
@@ -184,124 +218,130 @@ export function generatePerformanceData(): Record<string, DriverPerformance> {
   return result
 }
 
-function generateAnomalies(driver: Driver, cfg: { onTime: number; deviate: number; brake: number; turn: number; blank: number }) {
+function generateAnomalies(
+  driver: Driver,
+  cfg: { onTime: number; deviate: number; brake: number; turn: number; blank: number },
+  dateList: string[],
+  seed: number
+): Anomaly[] {
   const route = routes.find(r => r.id === driver.routeId)!
   const anomalies: Anomaly[] = []
   let id = 0
+  const rand = seededRandom(seed + 1000)
 
-  const earlyCount = Math.round((100 - cfg.onTime) / 4)
-  const lateCount = Math.round((100 - cfg.onTime) / 6)
+  const earlyCount = Math.max(0, Math.round((100 - cfg.onTime) / 4 + rand() * 2 - 1))
+  const lateCount = Math.max(0, Math.round((100 - cfg.onTime) / 6 + rand() * 2 - 1))
 
   for (let i = 0; i < earlyCount; i++) {
-    const stop = route.stops[Math.floor(Math.random() * route.stops.length)]
-    const minutes = Math.floor(Math.random() * 5) + 1
+    const stop = route.stops[Math.floor(rand() * route.stops.length)]
+    const minutes = Math.floor(rand() * 5) + 1
     anomalies.push({
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'early_arrival' as AnomalyType,
-      time: `${String(7 + Math.floor(Math.random() * 1)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'early_arrival',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
       locationName: stop.name,
       position: { ...stop.position },
       description: `到站时间早于计划 ${minutes} 分钟，学生候车时间不足`,
-      severity: (minutes >= 4 ? 'high' : minutes >= 2 ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+      severity: minutes >= 4 ? 'high' : minutes >= 2 ? 'medium' : 'low',
       details: {
         scheduledTime: stop.scheduledTime,
         actualTime: addMinutes(stop.scheduledTime, -minutes),
         waitTimeDiff: `${minutes} 分钟`,
-        studentCount: String(Math.floor(Math.random() * 8) + 3)
+        studentCount: String(Math.floor(rand() * 8) + 3)
       },
       selectedForTraining: false
     })
   }
 
   for (let i = 0; i < lateCount; i++) {
-    const stop = route.stops[Math.floor(Math.random() * route.stops.length)]
-    const minutes = Math.floor(Math.random() * 8) + 2
+    const stop = route.stops[Math.floor(rand() * route.stops.length)]
+    const minutes = Math.floor(rand() * 8) + 2
     anomalies.push({
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'late_arrival' as AnomalyType,
-      time: `${String(7 + Math.floor(Math.random() * 1)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'late_arrival',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
       locationName: stop.name,
       position: { ...stop.position },
       description: `到站时间晚于计划 ${minutes} 分钟，学生候车超时`,
-      severity: (minutes >= 6 ? 'high' : minutes >= 3 ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+      severity: minutes >= 6 ? 'high' : minutes >= 3 ? 'medium' : 'low',
       details: {
         scheduledTime: stop.scheduledTime,
         actualTime: addMinutes(stop.scheduledTime, minutes),
         waitTimeDiff: `${minutes} 分钟`,
-        studentCount: String(Math.floor(Math.random() * 10) + 5)
+        studentCount: String(Math.floor(rand() * 10) + 5)
       },
       selectedForTraining: false
     })
   }
 
   for (let i = 0; i < cfg.deviate; i++) {
-    const pathIdx = Math.floor(Math.random() * route.path.length)
+    const pathIdx = Math.floor(rand() * route.path.length)
     const basePos = route.path[pathIdx]
     anomalies.push({
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'route_deviation' as AnomalyType,
-      time: `${String(7 + Math.floor(Math.random() * 1)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'route_deviation',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
       locationName: `${basePos.x > 400 ? '城区段' : '城郊段'}偏离`,
-      position: { x: basePos.x + (Math.random() * 60 - 30), y: basePos.y + (Math.random() * 60 - 30) },
-      description: `偏离规划线路约 ${(Math.random() * 300 + 50).toFixed(0)} 米`,
-      severity: Math.random() > 0.6 ? 'high' : Math.random() > 0.3 ? 'medium' : 'low',
+      position: { x: basePos.x + (rand() * 60 - 30), y: basePos.y + (rand() * 60 - 30) },
+      description: `偏离规划线路约 ${(rand() * 300 + 50).toFixed(0)} 米`,
+      severity: rand() > 0.6 ? 'high' : rand() > 0.3 ? 'medium' : 'low',
       details: {
-        deviationDistance: `${(Math.random() * 300 + 50).toFixed(0)} 米`,
-        duration: `${Math.floor(Math.random() * 5 + 1)} 分钟`
+        deviationDistance: `${(rand() * 300 + 50).toFixed(0)} 米`,
+        duration: `${Math.floor(rand() * 5 + 1)} 分钟`
       },
       selectedForTraining: false
     })
   }
 
   for (let i = 0; i < cfg.brake; i++) {
-    const pathIdx = Math.floor(Math.random() * route.path.length)
+    const pathIdx = Math.floor(rand() * route.path.length)
     const basePos = route.path[pathIdx]
     anomalies.push({
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'sudden_brake' as AnomalyType,
-      time: `${String(7 + Math.floor(Math.random() * 1)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'sudden_brake',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
       locationName: pathIdx < route.path.length / 2 ? '上行路段' : '下行路段',
       position: { ...basePos },
-      description: `急减速，减速度 ${(Math.random() * 3 + 4).toFixed(1)} m/s²`,
-      severity: Math.random() > 0.5 ? 'high' : 'medium',
+      description: `急减速，减速度 ${(rand() * 3 + 4).toFixed(1)} m/s²`,
+      severity: rand() > 0.5 ? 'high' : 'medium',
       details: {
-        deceleration: `${(Math.random() * 3 + 4).toFixed(1)} m/s²`,
-        speedBefore: `${Math.floor(Math.random() * 20 + 30)} km/h`,
-        speedAfter: `${Math.floor(Math.random() * 10 + 5)} km/h`
+        deceleration: `${(rand() * 3 + 4).toFixed(1)} m/s²`,
+        speedBefore: `${Math.floor(rand() * 20 + 30)} km/h`,
+        speedAfter: `${Math.floor(rand() * 10 + 5)} km/h`
       },
       selectedForTraining: false
     })
   }
 
   for (let i = 0; i < cfg.turn; i++) {
-    const pathIdx = Math.floor(Math.random() * route.path.length)
+    const pathIdx = Math.floor(rand() * route.path.length)
     const basePos = route.path[pathIdx]
     anomalies.push({
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'sudden_turn' as AnomalyType,
-      time: `${String(7 + Math.floor(Math.random() * 1)).padStart(2, '0')}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'sudden_turn',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
       locationName: '路口转弯处',
       position: { ...basePos },
-      description: `急转弯，横向加速度 ${(Math.random() * 2 + 2.5).toFixed(1)} m/s²`,
-      severity: Math.random() > 0.5 ? 'medium' : 'low',
+      description: `急转弯，横向加速度 ${(rand() * 2 + 2.5).toFixed(1)} m/s²`,
+      severity: rand() > 0.5 ? 'medium' : 'low',
       details: {
-        lateralAcceleration: `${(Math.random() * 2 + 2.5).toFixed(1)} m/s²`,
-        speed: `${Math.floor(Math.random() * 15 + 20)} km/h`
+        lateralAcceleration: `${(rand() * 2 + 2.5).toFixed(1)} m/s²`,
+        speed: `${Math.floor(rand() * 15 + 20)} km/h`
       },
       selectedForTraining: false
     })
@@ -312,8 +352,8 @@ function generateAnomalies(driver: Driver, cfg: { onTime: number; deviate: numbe
       id: `${driver.id}-a-${id++}`,
       driverId: driver.id,
       routeId: driver.routeId,
-      date: dateList[Math.floor(Math.random() * 5)],
-      type: 'gps_blank' as AnomalyType,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'gps_blank',
       time: '07:00 - 07:25',
       locationName: '信号盲区段',
       position: route.path[Math.floor(route.path.length / 2)],
@@ -330,7 +370,8 @@ function generateAnomalies(driver: Driver, cfg: { onTime: number; deviate: numbe
   return anomalies.sort((a, b) => a.time.localeCompare(b.time))
 }
 
-function generateTrace(route: Route) {
+function generateTrace(route: Route, seed: number) {
+  const rand = seededRandom(seed + 2000)
   const points = []
   const startTime = 7 * 60
   for (let i = 0; i < route.path.length; i++) {
@@ -338,8 +379,8 @@ function generateTrace(route: Route) {
     const t = startTime + i * 4
     points.push({
       time: `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`,
-      position: { x: p.x + (Math.random() * 4 - 2), y: p.y + (Math.random() * 4 - 2) },
-      speed: Math.random() * 20 + 25,
+      position: { x: p.x + (rand() * 6 - 3), y: p.y + (rand() * 6 - 3) },
+      speed: rand() * 20 + 25,
       timestamp: t
     })
   }
@@ -350,4 +391,33 @@ function addMinutes(timeStr: string, minutes: number): string {
   const [h, m] = timeStr.split(':').map(Number)
   const total = h * 60 + m + minutes
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+export interface ImportedData {
+  weekStart: string
+  performances: Record<string, DriverPerformance>
+  drivers?: Driver[]
+  routes?: Route[]
+  fleets?: Fleet[]
+}
+
+export function validateAndParseImportedData(json: string): ImportedData | null {
+  try {
+    const data = JSON.parse(json)
+    if (!data.weekStart || !data.performances) return null
+    return data as ImportedData
+  } catch {
+    return null
+  }
+}
+
+export function generateSampleExportData(weekStart: string): string {
+  const performances = generatePerformanceData(weekStart)
+  return JSON.stringify({
+    weekStart,
+    performances,
+    drivers,
+    routes,
+    fleets
+  }, null, 2)
 }

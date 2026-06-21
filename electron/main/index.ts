@@ -5,8 +5,10 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 
 const isDev = !app.isPackaged
 
+let mainWindow: BrowserWindow | null = null
+
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1200,
@@ -14,16 +16,24 @@ function createWindow() {
     title: '校车轨迹复盘系统',
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false
     },
-    backgroundColor: '#0f172a'
+    backgroundColor: '#0f172a',
+    show: false
+  })
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show()
   })
 
   if (isDev) {
-    win.loadURL('http://localhost:5173')
-    win.webContents.openDevTools()
+    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
+    mainWindow.loadURL(devUrl)
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    const indexPath = path.join(__dirname, '../../dist/index.html')
+    mainWindow.loadFile(indexPath)
   }
 }
 
