@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Driver, DriverPerformance, Route, Anomaly, AnomalyType } from '../types'
+import { Driver, DriverPerformance, Route, Anomaly, AnomalyType, StoredInterviewRecord } from '../types'
 import { ANOMALY_LABELS, ANOMALY_COLORS, SEVERITY_LABELS } from '../data/mockData'
 
 interface DriverDetailProps {
@@ -10,6 +10,7 @@ interface DriverDetailProps {
   onSelectedTrainingChange: (ids: Set<string>) => void
   onBack: () => void
   onOpenInterview: () => void
+  interviewHistory?: StoredInterviewRecord[]
 }
 
 const ANOMALY_ICONS: Record<AnomalyType, string> = {
@@ -22,7 +23,7 @@ const ANOMALY_ICONS: Record<AnomalyType, string> = {
   overspeed: '⚡'
 }
 
-function DriverDetail({ driver, performance, route, selectedTrainingIds, onSelectedTrainingChange, onBack, onOpenInterview }: DriverDetailProps) {
+function DriverDetail({ driver, performance, route, selectedTrainingIds, onSelectedTrainingChange, onBack, onOpenInterview, interviewHistory = [] }: DriverDetailProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [playSpeed, setPlaySpeed] = useState(1)
   const [currentTimeIndex, setCurrentTimeIndex] = useState(0)
@@ -120,6 +121,12 @@ function DriverDetail({ driver, performance, route, selectedTrainingIds, onSelec
               <h2>{driver.name}</h2>
               <p>
                 工号 {driver.employeeId} · {route.name} · 入职 {driver.hireDate}
+                {interviewHistory.length > 0 && (
+                  <>
+                    <span style={{ margin: '0 8px' }}>·</span>
+                    <span style={{ color: 'var(--accent)' }}>📝 历史面谈 {interviewHistory.length} 次</span>
+                  </>
+                )}
               </p>
             </div>
           </div>

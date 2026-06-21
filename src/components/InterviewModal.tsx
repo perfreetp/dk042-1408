@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { Driver, DriverPerformance, Anomaly } from '../types'
-import { ANOMALY_LABELS, ANOMALY_COLORS, routes } from '../data/mockData'
+import { Driver, DriverPerformance, Anomaly, StoredInterviewRecord, AnomalyType } from '../types'
+import { ANOMALY_LABELS, ANOMALY_COLORS } from '../data/mockData'
 
 interface InterviewModalProps {
   driver: Driver
@@ -9,6 +9,10 @@ interface InterviewModalProps {
   onSelectedChange: (ids: Set<string>) => void
   weekStart: string
   onClose: () => void
+  fleetName?: string
+  routeName?: string
+  weekEnd?: string
+  onSave?: (record: StoredInterviewRecord) => void
 }
 
 const ANOMALY_ICONS: Record<string, string> = {
@@ -31,7 +35,7 @@ const DEFAULT_REQUIREMENTS: Record<string, string> = {
   overspeed: '严格遵守限速规定，特别是经过学校、居民区路段必须减速。'
 }
 
-function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedChange, weekStart, onClose }: InterviewModalProps) {
+function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedChange, weekStart, onClose, fleetName = '', routeName, weekEnd: weekEndProp, onSave }: InterviewModalProps) {
   const [improvementRequirements, setImprovementRequirements] = useState('')
   const [notes, setNotes] = useState('')
   const [nextReviewDate, setNextReviewDate] = useState(() => {
@@ -42,7 +46,8 @@ function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedCha
   const [supervisor, setSupervisor] = useState('王主管')
   const [showGenerated, setShowGenerated] = useState(false)
 
-  const route = routes.find(r => r.id === driver.routeId)
+  const route = routeName ? { name: routeName } : null
+  const weekEnd = weekEndProp || performance.weekEnd
 
   const selectedAnomalies: Anomaly[] = useMemo(() => {
     return performance.anomalies.filter(a => selectedAnomalyIds.has(a.id))
@@ -81,6 +86,51 @@ function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedCha
 
   const handleGenerate = () => {
     setShowGenerated(true)
+  }
+
+  const handleSaveAndClose = () => {
+    if (onSave) {
+      const anomalySummaries = Array.from(
+        selectedAnomalies.reduce((map, a) => {
+          map.set(a.type, (map.get(a.type) || 0) + 1)
+          return map
+        }, new Map<string, number>())
+      ).map(([type, count]) => ({ type: type as AnomalyType, count }))
+
+      const record: StoredInterviewRecord = {
+        id: `iv_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+        interviewDate,
+        nextReviewDate,
+        supervisor,
+        notes,
+        improvementRequirements,
+        selectedAnomalyIds: Array.from(selectedAnomalyIds),
+        driverId: driver.id,
+        driverName: driver.name,
+        driverEmployeeId: driver.employeeId,
+        driverPhone: driver.phone,
+        fleetId: driver.fleetId,
+        fleetName,
+        routeId: driver.routeId,
+        routeName: route?.name || '',
+        weekStart,
+        weekEnd,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        anomalySummaries,
+        anomalyDetails: selectedAnomalies.map(a => ({
+          id: a.id,
+          type: a.type,
+          severity: a.severity,
+          date: a.date,
+          time: a.time,
+          locationName: a.locationName,
+          description: a.description
+        }))
+      }
+      onSave(record)
+    }
+    onClose()
   }
 
   const handlePrint = () => {
@@ -265,7 +315,7 @@ function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedCha
                 <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>校车司机面谈记录表</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>School Bus Driver Interview Record</div>
                 <div style={{ fontSize: 13, color: 'var(--accent)', marginTop: 10, fontWeight: 500 }}>
-                  考核周期：{weekStart} 至 {performance.weekEnd}
+                  考核周期：{weekStart} 至 {weekEnd}
                 </div>
               </div>
 
@@ -278,9 +328,15 @@ function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedCha
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>工号</div>
                   <div style={{ fontSize: 15, fontWeight: 600 }}>{driver.employeeId}</div>
                 </div>
+                {fleetName && (
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>所属车队</div>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{fleetName}</div>
+                  </div>
+                )}
                 <div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>所属线路</div>
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>{route?.name}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{route?.name || '-'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>联系电话</div>
@@ -422,7 +478,9 @@ function InterviewModal({ driver, performance, selectedAnomalyIds, onSelectedCha
             <>
               <button className="btn btn-outline" onClick={() => setShowGenerated(false)}>返回编辑</button>
               <button className="btn btn-secondary" onClick={handlePrint}>🖨️ 打印记录</button>
-              <button className="btn btn-primary" onClick={onClose}>✓ 确认完成</button>
+              <button className="btn btn-primary" onClick={handleSaveAndClose}>
+                {onSave ? '💾 保存并完成' : '✓ 确认完成'}
+              </button>
             </>
           )}
         </div>

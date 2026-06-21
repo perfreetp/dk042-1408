@@ -421,3 +421,351 @@ export function generateSampleExportData(weekStart: string): string {
     fleets
   }, null, 2)
 }
+
+export function generatePerformanceDataWithDrivers(
+  weekStart: string,
+  customDrivers: Driver[],
+  customRoutes: Route[] = routes,
+  _customFleets: Fleet[] = fleets
+): Record<string, DriverPerformance> {
+  const result: Record<string, DriverPerformance> = {}
+  const dateList = generateDateList(weekStart)
+
+  customDrivers.forEach(driver => {
+    const seed = getWeekSeed(weekStart, driver.id)
+    const rand = seededRandom(seed)
+
+    const baseOnTime = 85 + (rand() * 12)
+    const adjustedOnTime = Math.max(60, Math.min(99, baseOnTime + (rand() * 6 - 3)))
+    const adjustedDeviate = Math.max(0, Math.round(rand() * 7))
+    const adjustedBrake = Math.max(0, Math.round(rand() * 8))
+    const adjustedTurn = Math.max(0, Math.round(rand() * 5))
+    const adjustedBlank = Math.max(0, Math.round(rand() * 35))
+
+    const dailyStats = dateList.map(date => ({
+      date,
+      onTimeRate: Math.max(50, Math.min(100, adjustedOnTime + (rand() * 16 - 8))),
+      anomalyCount: Math.max(0, Math.round((adjustedDeviate + adjustedBrake + adjustedTurn) / 7 + (rand() * 2 - 1))),
+      deviationCount: Math.max(0, Math.round(adjustedDeviate / 7 + (rand() * 1.5 - 0.5))),
+      gpsBlankMinutes: Math.max(0, Math.round(adjustedBlank / 7 + (rand() * 4 - 2))),
+      suddenEvents: Math.max(0, Math.round((adjustedBrake + adjustedTurn) / 7 + (rand() * 1.5 - 0.5)))
+    }))
+
+    const routeForDriver = customRoutes.find(r => r.id === driver.routeId) || customRoutes[0]
+
+    const anomalies = generateAnomaliesForCustom(driver, {
+      onTime: adjustedOnTime,
+      deviate: adjustedDeviate,
+      brake: adjustedBrake,
+      turn: adjustedTurn,
+      blank: adjustedBlank
+    }, dateList, seed, routeForDriver)
+
+    const trace = generateTrace(routeForDriver, seed)
+
+    result[driver.id] = {
+      driverId: driver.id,
+      weekStart,
+      weekEnd: dateList[6],
+      totalTrips: 10,
+      onTimeRate: Math.round(adjustedOnTime),
+      deviationCount: adjustedDeviate,
+      suddenBrakeCount: adjustedBrake,
+      suddenTurnCount: adjustedTurn,
+      gpsBlankMinutes: adjustedBlank,
+      dailyStats,
+      anomalies,
+      trace
+    }
+  })
+
+  return result
+}
+
+function generateAnomaliesForCustom(
+  driver: Driver,
+  cfg: { onTime: number; deviate: number; brake: number; turn: number; blank: number },
+  dateList: string[],
+  seed: number,
+  route: Route
+): Anomaly[] {
+  const anomalies: Anomaly[] = []
+  let id = 0
+  const rand = seededRandom(seed + 1000)
+
+  const earlyCount = Math.max(0, Math.round((100 - cfg.onTime) / 4 + rand() * 2 - 1))
+  const lateCount = Math.max(0, Math.round((100 - cfg.onTime) / 6 + rand() * 2 - 1))
+
+  for (let i = 0; i < earlyCount; i++) {
+    const stop = route.stops[Math.floor(rand() * route.stops.length)]
+    const minutes = Math.floor(rand() * 5) + 1
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'early_arrival',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
+      locationName: stop.name,
+      position: { ...stop.position },
+      description: `到站时间早于计划 ${minutes} 分钟，学生候车时间不足`,
+      severity: minutes >= 4 ? 'high' : minutes >= 2 ? 'medium' : 'low',
+      details: {
+        scheduledTime: stop.scheduledTime,
+        actualTime: addMinutes(stop.scheduledTime, -minutes),
+        waitTimeDiff: `${minutes} 分钟`,
+        studentCount: String(Math.floor(rand() * 8) + 3)
+      },
+      selectedForTraining: false
+    })
+  }
+
+  for (let i = 0; i < lateCount; i++) {
+    const stop = route.stops[Math.floor(rand() * route.stops.length)]
+    const minutes = Math.floor(rand() * 8) + 2
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'late_arrival',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
+      locationName: stop.name,
+      position: { ...stop.position },
+      description: `到站时间晚于计划 ${minutes} 分钟，学生候车超时`,
+      severity: minutes >= 6 ? 'high' : minutes >= 3 ? 'medium' : 'low',
+      details: {
+        scheduledTime: stop.scheduledTime,
+        actualTime: addMinutes(stop.scheduledTime, minutes),
+        waitTimeDiff: `${minutes} 分钟`,
+        studentCount: String(Math.floor(rand() * 10) + 5)
+      },
+      selectedForTraining: false
+    })
+  }
+
+  for (let i = 0; i < cfg.deviate; i++) {
+    const pathIdx = Math.floor(rand() * route.path.length)
+    const basePos = route.path[pathIdx]
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'route_deviation',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
+      locationName: `${basePos.x > 400 ? '城区段' : '城郊段'}偏离`,
+      position: { x: basePos.x + (rand() * 60 - 30), y: basePos.y + (rand() * 60 - 30) },
+      description: `偏离规划线路约 ${(rand() * 300 + 50).toFixed(0)} 米`,
+      severity: rand() > 0.6 ? 'high' : rand() > 0.3 ? 'medium' : 'low',
+      details: {
+        deviationDistance: `${(rand() * 300 + 50).toFixed(0)} 米`,
+        duration: `${Math.floor(rand() * 5 + 1)} 分钟`
+      },
+      selectedForTraining: false
+    })
+  }
+
+  for (let i = 0; i < cfg.brake; i++) {
+    const pathIdx = Math.floor(rand() * route.path.length)
+    const basePos = route.path[pathIdx]
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'sudden_brake',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
+      locationName: pathIdx < route.path.length / 2 ? '上行路段' : '下行路段',
+      position: { ...basePos },
+      description: `急减速，减速度 ${(rand() * 3 + 4).toFixed(1)} m/s²`,
+      severity: rand() > 0.5 ? 'high' : 'medium',
+      details: {
+        deceleration: `${(rand() * 3 + 4).toFixed(1)} m/s²`,
+        speedBefore: `${Math.floor(rand() * 20 + 30)} km/h`,
+        speedAfter: `${Math.floor(rand() * 10 + 5)} km/h`
+      },
+      selectedForTraining: false
+    })
+  }
+
+  for (let i = 0; i < cfg.turn; i++) {
+    const pathIdx = Math.floor(rand() * route.path.length)
+    const basePos = route.path[pathIdx]
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'sudden_turn',
+      time: `${String(7 + Math.floor(rand() * 1)).padStart(2, '0')}:${String(Math.floor(rand() * 60)).padStart(2, '0')}`,
+      locationName: '路口转弯处',
+      position: { ...basePos },
+      description: `急转弯，横向加速度 ${(rand() * 2 + 2.5).toFixed(1)} m/s²`,
+      severity: rand() > 0.5 ? 'medium' : 'low',
+      details: {
+        lateralAcceleration: `${(rand() * 2 + 2.5).toFixed(1)} m/s²`,
+        speed: `${Math.floor(rand() * 15 + 20)} km/h`
+      },
+      selectedForTraining: false
+    })
+  }
+
+  if (cfg.blank > 10) {
+    anomalies.push({
+      id: `${driver.id}-a-${id++}`,
+      driverId: driver.id,
+      routeId: driver.routeId,
+      date: dateList[Math.floor(rand() * 5)],
+      type: 'gps_blank',
+      time: '07:00 - 07:25',
+      locationName: '信号盲区段',
+      position: route.path[Math.floor(route.path.length / 2)],
+      description: `GPS信号中断累计 ${cfg.blank} 分钟，轨迹不完整`,
+      severity: cfg.blank > 25 ? 'high' : cfg.blank > 15 ? 'medium' : 'low',
+      details: {
+        blankDuration: `${cfg.blank} 分钟`,
+        segment: '中途段'
+      },
+      selectedForTraining: false
+    })
+  }
+
+  return anomalies.sort((a, b) => a.time.localeCompare(b.time))
+}
+
+import type { DriverRiskProfile, RiskLevel, StoredInterviewRecord } from '../types'
+
+export function calculateRiskProfiles(
+  driverList: Driver[],
+  routeList: Route[],
+  fleetList: Fleet[],
+  currentWeekStart: string,
+  interviewRecords: StoredInterviewRecord[] = []
+): DriverRiskProfile[] {
+  const weekOffsets = [0, -7, -14, -21, -28]
+  const weekStarts = weekOffsets.map(offset => {
+    const d = new Date(currentWeekStart)
+    d.setDate(d.getDate() + offset)
+    return d.toISOString().split('T')[0]
+  }).reverse()
+
+  const profiles: DriverRiskProfile[] = []
+
+  driverList.forEach(driver => {
+    const weeklyTrend = weekStarts.map(ws => {
+      const seed = getWeekSeed(ws, driver.id)
+      const rand = seededRandom(seed)
+      const onTime = Math.max(60, Math.min(99, 85 + (rand() * 12)))
+      const anomalyCount = Math.max(0, Math.round(rand() * 20))
+      const gpsBlank = Math.max(0, Math.round(rand() * 35))
+      return { weekStart: ws, onTimeRate: Math.round(onTime), anomalyCount, gpsBlankMinutes: gpsBlank }
+    })
+
+    const recent3Weeks = weeklyTrend.slice(-3)
+    const avgOnTimeRate = recent3Weeks.reduce((s, w) => s + w.onTimeRate, 0) / 3
+    const avgAnomalyCount = recent3Weeks.reduce((s, w) => s + w.anomalyCount, 0) / 3
+    const avgGpsBlank = recent3Weeks.reduce((s, w) => s + w.gpsBlankMinutes, 0) / 3
+
+    const onTimeRates = weeklyTrend.map(w => w.onTimeRate)
+    const recentOnTime = onTimeRates.slice(-2)
+    const olderOnTime = onTimeRates.slice(0, -2)
+    const recentAvg = recentOnTime.reduce((s, v) => s + v, 0) / Math.max(1, recentOnTime.length)
+    const olderAvg = olderOnTime.reduce((s, v) => s + v, 0) / Math.max(1, olderOnTime.length)
+    const onTimeRateTrend: 'stable' | 'improving' | 'declining' =
+      recentAvg - olderAvg > 3 ? 'improving' :
+      recentAvg - olderAvg < -3 ? 'declining' : 'stable'
+
+    let consecutiveWeeksWithIssues = 0
+    for (let i = weeklyTrend.length - 1; i >= 0; i--) {
+      if (weeklyTrend[i].anomalyCount >= 8 || weeklyTrend[i].onTimeRate < 85 || weeklyTrend[i].gpsBlankMinutes >= 20) {
+        consecutiveWeeksWithIssues++
+      } else {
+        break
+      }
+    }
+
+    const riskFactors: string[] = []
+    if (avgOnTimeRate < 85) riskFactors.push('准点率低于 85%')
+    if (onTimeRateTrend === 'declining') riskFactors.push('准点率呈下降趋势')
+    if (avgAnomalyCount > 10) riskFactors.push('异常数量偏高（周均 > 10 次）')
+    if (consecutiveWeeksWithIssues >= 2) riskFactors.push(`连续 ${consecutiveWeeksWithIssues} 周存在问题`)
+    if (avgGpsBlank > 20) riskFactors.push('GPS 空白时长偏高（周均 > 20 分钟）')
+
+    const driverInterviews = interviewRecords.filter(r => r.driverId === driver.id)
+      .sort((a, b) => b.date.localeCompare(a.date))
+    const lastInterview = driverInterviews[0]
+    if (lastInterview && new Date().toISOString().split('T')[0] > lastInterview.nextReviewDate) {
+      riskFactors.push('已超过下次观察日期')
+    }
+
+    let riskScore = 0
+    riskScore += Math.max(0, 100 - avgOnTimeRate)
+    riskScore += avgAnomalyCount * 2
+    riskScore += consecutiveWeeksWithIssues * 10
+    riskScore += avgGpsBlank * 0.5
+    if (onTimeRateTrend === 'declining') riskScore += 15
+
+    let riskLevel: RiskLevel = 'low'
+    if (riskScore >= 50) riskLevel = 'critical'
+    else if (riskScore >= 35) riskLevel = 'high'
+    else if (riskScore >= 20) riskLevel = 'medium'
+
+    const recommendedActions: string[] = []
+    if (riskLevel === 'critical') {
+      recommendedActions.push('立即安排专项面谈，讨论近期严重问题')
+      recommendedActions.push('安排跟车检查，现场观察驾驶行为')
+      recommendedActions.push('下周起每日复盘重点监控')
+    } else if (riskLevel === 'high') {
+      recommendedActions.push('安排面谈记录，明确改进要求')
+      recommendedActions.push('对比历史数据，查找问题根因')
+      recommendedActions.push('下两周列为重点关注对象')
+    } else if (riskLevel === 'medium') {
+      recommendedActions.push('在下周车队例会上点名提醒')
+      recommendedActions.push('检查线路是否存在特殊路况导致异常')
+    } else {
+      recommendedActions.push('保持正常监控频率')
+      recommendedActions.push('可作为正面案例分享')
+    }
+    if (avgGpsBlank > 20) {
+      recommendedActions.push('检查车辆 GPS 设备是否正常工作')
+    }
+    if (onTimeRateTrend === 'declining') {
+      recommendedActions.push('了解司机近期是否有个人情况影响驾驶')
+    }
+
+    const route = routeList.find(r => r.id === driver.routeId)
+    const fleet = fleetList.find(f => f.id === driver.fleetId)
+
+    profiles.push({
+      driverId: driver.id,
+      driverName: driver.name,
+      fleetId: driver.fleetId,
+      fleetName: fleet?.name || '未分配车队',
+      routeId: driver.routeId,
+      routeName: route?.name || '未分配线路',
+      riskLevel,
+      riskScore: Math.round(riskScore),
+      riskFactors,
+      recommendedActions,
+      weeklyTrend,
+      consecutiveWeeksWithIssues,
+      onTimeRateTrend,
+      lastInterviewDate: lastInterview?.date,
+      nextReviewDate: lastInterview?.nextReviewDate
+    })
+  })
+
+  return profiles.sort((a, b) => b.riskScore - a.riskScore)
+}
+
+export function computeDataHash(obj: unknown): string {
+  const str = JSON.stringify(obj)
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return Math.abs(hash).toString(36)
+}

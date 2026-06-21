@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Driver, DriverPerformance } from '../types'
-import { fleets, routes, ANOMALY_LABELS } from '../data/mockData'
+import { Driver, DriverPerformance, DriverRiskProfile, Fleet, Route } from '../types'
+import { ANOMALY_LABELS } from '../data/mockData'
 import {
   LineChart,
   Line,
@@ -20,6 +20,8 @@ interface DashboardProps {
   weekEnd: string
   drivers: Driver[]
   allDrivers: Driver[]
+  fleets: Fleet[]
+  routes: Route[]
   performanceData: Record<string, DriverPerformance>
   selectedFleetId: string | null
   selectedRouteId: string | null
@@ -27,6 +29,7 @@ interface DashboardProps {
   onClearFleet: () => void
   onClearRoute: () => void
   onOpenInterview: (driverId: string) => void
+  riskProfiles?: DriverRiskProfile[]
 }
 
 function getRateClass(rate: number) {
@@ -39,13 +42,16 @@ function Dashboard({
   weekLabel,
   drivers,
   allDrivers,
+  fleets,
+  routes,
   performanceData,
   selectedFleetId,
   selectedRouteId,
   onSelectDriver,
   onClearFleet,
   onClearRoute,
-  onOpenInterview
+  onOpenInterview,
+  riskProfiles = []
 }: DashboardProps) {
   const [viewMode, setViewMode] = useState<'table' | 'chart'>('table')
 
@@ -118,15 +124,15 @@ function Dashboard({
 
   const headerTitle = useMemo(() => {
     if (selectedRouteId) {
-      const r = routes.find(x => x.id === selectedRouteId)
+      const r = routes.find((x: Route) => x.id === selectedRouteId)
       return r?.name || '线路复盘'
     }
     if (selectedFleetId) {
-      const f = fleets.find(x => x.id === selectedFleetId)
+      const f = fleets.find((x: Fleet) => x.id === selectedFleetId)
       return f?.name || '车队复盘'
     }
     return '全车队运营复盘'
-  }, [selectedFleetId, selectedRouteId])
+  }, [selectedFleetId, selectedRouteId, fleets, routes])
 
   const headerSubtitle = useMemo(() => {
     const parts = [`本周 ${weekLabel}`]
@@ -297,7 +303,7 @@ function Dashboard({
               <tbody>
                 {drivers.map(driver => {
                   const perf = performanceData[driver.id]
-                  const route = routes.find(r => r.id === driver.routeId)
+                  const route = routes.find((r: Route) => r.id === driver.routeId)
                   if (!perf) return null
                   return (
                     <tr key={driver.id} onClick={() => onSelectDriver(driver.id)}>
@@ -386,17 +392,25 @@ function Dashboard({
 
             <div className="divider" />
 
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)' }}>
-              需重点关注司机
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>需重点关注司机（风险分层）</span>
+              {riskProfiles.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, fontSize: 11 }}>
+                  <span className="badge badge-red" style={{ opacity: 0.85 }}>
+                    {riskProfiles.filter(r => r.riskLevel === 'critical' || r.riskLevel === 'high').length} 高风险
+                  </span>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {drivers
-                .map(d => ({ driver: d, perf: performanceData[d.id] }))
-                .filter(x => x.perf)
-                .sort((a, b) => (b.perf!.anomalies.length) - (a.perf!.anomalies.length))
-                .slice(0, 4)
-                .map(({ driver, perf }) => {
-                  const route = routes.find(r => r.id === driver.routeId)
+              {(riskProfiles.length > 0
+                ? riskProfiles.filter(r => r.riskLevel === 'critical' || r.riskLevel === 'high').slice(0, 4)
+                : []
+              ).map(profile => {
+                  const driver = allDrivers.find(d => d.id === profile.driverId)
+                  if (!driver) return null
+                  const perf = performanceData[driver.id]
+                  const riskColor = profile.riskLevel === 'critical' ? 'var(--danger)' : '#f59e0b'
                   return (
                     <div
                       key={driver.id}
@@ -408,30 +422,90 @@ function Dashboard({
                         background: 'var(--bg-secondary)',
                         borderRadius: 8,
                         cursor: 'pointer',
-                        border: '1px solid var(--border)',
-                        transition: 'all 0.15s'
+                        border: `1px solid ${riskColor}33`,
+                        transition: 'all 0.15s',
+                        boxShadow: `0 0 0 1px ${riskColor}11 inset`
                       }}
                       onClick={() => onSelectDriver(driver.id)}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-light)')}
-                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = riskColor)}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = `${riskColor}33`)}
                     >
                       <div className="driver-avatar-sm" style={{
-                        background: 'linear-gradient(135deg, var(--accent), var(--purple))'
+                        background: `linear-gradient(135deg, ${riskColor}, var(--purple))`
                       }}>
                         {driver.name.charAt(0)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{driver.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {route?.name.split('·')[0]}
+                        <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {driver.name}
+                          <span className="badge" style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            background: profile.riskLevel === 'critical' ? 'var(--danger)' : '#f59e0b',
+                            color: 'white'
+                          }}>
+                            {profile.riskLevel === 'critical' ? '极高' : '高风险'}
+                          </span>
                         </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {profile.routeName.split('·')[0]} · 风险分 {profile.riskScore}
+                        </div>
+                        {profile.riskFactors.length > 0 && (
+                          <div style={{ fontSize: 10, color: riskColor, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {profile.riskFactors.slice(0, 2).join(' · ')}
+                          </div>
+                        )}
                       </div>
                       <span className="badge badge-red" style={{ fontSize: 11 }}>
-                        {perf!.anomalies.length} 起
+                        {perf?.anomalies.length || 0} 起
                       </span>
                     </div>
                   )
                 })}
+              {riskProfiles.filter(r => r.riskLevel === 'critical' || r.riskLevel === 'high').length === 0 && (
+                drivers
+                  .map(d => ({ driver: d, perf: performanceData[d.id] }))
+                  .filter(x => x.perf)
+                  .sort((a, b) => (b.perf!.anomalies.length) - (a.perf!.anomalies.length))
+                  .slice(0, 4)
+                  .map(({ driver, perf }) => {
+                    const route = defaultRoutes.find(r => r.id === driver.routeId)
+                    return (
+                      <div
+                        key={driver.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: 10,
+                          background: 'var(--bg-secondary)',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          border: '1px solid var(--border)',
+                          transition: 'all 0.15s'
+                        }}
+                        onClick={() => onSelectDriver(driver.id)}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--border-light)')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                      >
+                        <div className="driver-avatar-sm" style={{
+                          background: 'linear-gradient(135deg, var(--accent), var(--purple))'
+                        }}>
+                          {driver.name.charAt(0)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500 }}>{driver.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {route?.name.split('·')[0]}
+                          </div>
+                        </div>
+                        <span className="badge badge-red" style={{ fontSize: 11 }}>
+                          {perf!.anomalies.length} 起
+                        </span>
+                      </div>
+                    )
+                  })
+              )}
             </div>
           </div>
         </div>

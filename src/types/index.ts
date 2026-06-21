@@ -90,10 +90,78 @@ export interface InterviewNote {
   id?: string
   driverId: string
   driverName: string
-  date: string
+  driverEmployeeId?: string
+  driverPhone?: string
+  weekStart: string
+  weekEnd: string
+  interviewDate: string
   nextReviewDate: string
-  selectedAnomalies: string[]
+  selectedAnomalyIds: string[]
+  anomalySummaries: Array<{
+    type: AnomalyType
+    count: number
+  }>
   improvementRequirements: string
   notes: string
   supervisor: string
+  fleetId: string
+  fleetName: string
+  routeId: string
+  routeName: string
+}
+
+export interface WeekArchive {
+  id: string
+  name: string
+  weekStart: string
+  weekEnd: string
+  createdAt: string
+  fleetId: string | null
+  routeId: string | null
+  searchQuery: string
+  keyDriverIds: string[]
+  anomalySummary: Partial<Record<AnomalyType, number>>
+  interviewNoteIds: string[]
+  description?: string
+  customDataHash?: string
+}
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+
+export interface DriverRiskProfile {
+  driverId: string
+  driverName: string
+  fleetId: string
+  fleetName: string
+  routeId: string
+  routeName: string
+  riskLevel: RiskLevel
+  riskScore: number
+  riskFactors: string[]
+  recommendedActions: string[]
+  weeklyTrend: Array<{
+    weekStart: string
+    onTimeRate: number
+    anomalyCount: number
+    gpsBlankMinutes: number
+  }>
+  consecutiveWeeksWithIssues: number
+  onTimeRateTrend: 'stable' | 'improving' | 'declining'
+  lastInterviewDate?: string
+  nextReviewDate?: string
+}
+
+export interface StoredInterviewRecord extends InterviewNote {
+  id: string
+  createdAt: string
+  updatedAt: string
+  anomalyDetails: Array<{
+    id: string
+    type: AnomalyType
+    severity: 'low' | 'medium' | 'high'
+    date: string
+    time: string
+    locationName: string
+    description: string
+  }>
 }
